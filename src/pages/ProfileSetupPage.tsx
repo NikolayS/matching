@@ -211,7 +211,7 @@ const LogoutButton = styled.button`
 `;
 
 export const ProfileSetupPage: React.FC = () => {
-  const { user, signOut, refreshProfile } = useAuth();
+  const { user, signOut, refreshProfile, updateUser } = useAuth();
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -270,53 +270,140 @@ export const ProfileSetupPage: React.FC = () => {
         const fileExt = data.photo.name.split('.').pop();
         const fileName = `${user.id}/profile.${fileExt}`;
 
-        const { error: uploadError } = await supabase.storage
-          .from('profile-photos')
-          .upload(fileName, data.photo, { 
-            upsert: true 
+        // Ensure bucket exists (create if not)
+        const { data: buckets } = await supabase.storage.listBuckets();
+        const bucketExists = buckets?.some(bucket => bucket.name === 'profile-photos');
+        
+        if (!bucketExists) {
+          const { error: bucketError } = await supabase.storage.createBucket('profile-photos', {
+            public: true,
+            allowedMimeTypes: ['image/*'],
+            fileSizeLimit: '5MB'
           });
-
-        if (uploadError) {
-          throw new Error(`Photo upload failed: ${uploadError.message}`);
+          
+          if (bucketError) {
+            console.warn('Could not create bucket:', bucketError.message);
+          }
         }
 
-        // Get public URL
-        const { data: { publicUrl } } = supabase.storage
-          .from('profile-photos')
-          .getPublicUrl(fileName);
+        // For custom auth users, we'll store photos via our backend
+        // Create a FormData object to send the file
+        const formData = new FormData();
+        formData.append('photo', data.photo);
+        formData.append('userId', user.id);
 
-        photoUrl = publicUrl;
+        try {
+          const uploadResponse = await fetch('http://localhost:3001/api/upload/photo', {
+            method: 'POST',
+            body: formData,
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
+            }
+          });
+
+          const uploadResult = await uploadResponse.json();
+          
+          if (!uploadResult.success) {
+            throw new Error(uploadResult.error || 'Photo upload failed');
+          }
+
+          photoUrl = uploadResult.photoUrl;
+        } catch (fetchError) {
+          // Fallback to direct Supabase upload (for email auth users)
+          console.log('Trying direct Supabase upload as fallback...');
+          
+          const { error: uploadError } = await supabase.storage
+            .from('profile-photos')
+            .upload(fileName, data.photo, { 
+              upsert: true 
+            });
+
+          if (uploadError) {
+            throw new Error(`Photo upload failed: ${uploadError.message}`);
+          }
+
+          // Get public URL
+          const { data: { publicUrl } } = supabase.storage
+            .from('profile-photos')
+            .getPublicUrl(fileName);
+
+          photoUrl = publicUrl;
+        }
       }
 
-      // Create profile record
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .upsert({
-          user_id: user.id,
-          photo_url: photoUrl,
-          questionnaire_data: data.questionnaire,
-          ai_analysis: null // Will be populated later by AI service
+      // Check if user is custom auth (phone) or email auth
+      // Custom auth users have sessionToken in localStorage
+      const isCustomAuth = !!localStorage.getItem('sessionToken');
+      
+      if (isCustomAuth) {
+        // Use backend for custom auth users (bypasses RLS)
+        const profileResponse = await fetch('http://localhost:3001/api/profile/create', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
+          },
+          body: JSON.stringify({
+            userId: user.id,
+            photoUrl,
+            questionnaireData: data.questionnaire,
+            phoneNumber: user.phone_number
+          })
         });
 
-      if (profileError) {
-        throw new Error(`Profile creation failed: ${profileError.message}`);
+        const profileResult = await profileResponse.json();
+        
+        if (!profileResult.success) {
+          throw new Error(profileResult.error || 'Profile creation failed');
+        }
+        
+        console.log('✅ Profile created successfully via backend:', profileResult);
+        
+        // If backend returned a different user ID (due to phone number match), update our local state
+        if (profileResult.userId && profileResult.userId !== user.id) {
+          console.log(`🔄 Backend returned different user ID: ${profileResult.userId}, updating local state`);
+          const updatedUser = { ...user, id: profileResult.userId, profile_completed: true };
+          localStorage.setItem('user', JSON.stringify(updatedUser));
+          await updateUser(updatedUser);
+        } else {
+          // Update user state to reflect completed profile
+          await updateUser({ profile_completed: true });
+        }
+      } else {
+        // Use direct Supabase for email auth users
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .upsert({
+            user_id: user.id,
+            photo_url: photoUrl,
+            questionnaire_data: data.questionnaire,
+            ai_analysis: null // Will be populated later by AI service
+          });
+
+        if (profileError) {
+          throw new Error(`Profile creation failed: ${profileError.message}`);
+        }
+
+        // Update user's profile_completed status
+        const { error: userUpdateError } = await supabase
+          .from('users')
+          .update({ profile_completed: true })
+          .eq('id', user.id);
+
+        if (userUpdateError) {
+          throw new Error(`User update failed: ${userUpdateError.message}`);
+        }
+
+        // Refresh user profile to get updated data
+        await refreshProfile();
       }
 
-      // Update user's profile_completed status
-      const { error: userUpdateError } = await supabase
-        .from('users')
-        .update({ profile_completed: true })
-        .eq('id', user.id);
-
-      if (userUpdateError) {
-        throw new Error(`User update failed: ${userUpdateError.message}`);
-      }
-
-      // Refresh user profile to get updated data
-      await refreshProfile();
-
+      console.log('🚀 About to navigate to /matching...');
+      
       // Navigate to matching page
       navigate('/matching');
+      
+      console.log('✅ Navigation to /matching completed');
 
     } catch (err) {
       console.error('Profile setup error:', err);

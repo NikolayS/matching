@@ -9,6 +9,7 @@ interface AuthContextType extends AuthState {
   signInWithEmail: (email: string) => Promise<{ error: any }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  updateUser: (userData: Partial<AppUser>) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -88,7 +89,37 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   useEffect(() => {
     const initializeAuth = async () => {
       try {
-        // Get initial session
+        // Check for custom session token first
+        const sessionToken = localStorage.getItem('sessionToken');
+        const userData = localStorage.getItem('user');
+        
+        if (sessionToken && userData) {
+          const user = JSON.parse(userData);
+          setUser(user);
+          setIsAuthenticated(true);
+          
+          // Load profile for custom auth users if profile is completed
+          if (user.profile_completed) {
+            try {
+              const { data: profileData, error: profileError } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('user_id', user.id)
+                .single();
+              
+              if (!profileError && profileData) {
+                setProfile(profileData);
+              }
+            } catch (error) {
+              console.error('Error loading profile for custom auth user:', error);
+            }
+          }
+          
+          setLoading(false);
+          return;
+        }
+
+        // Fallback to Supabase session for email auth
         const { data: { session }, error } = await supabase.auth.getSession();
         
         if (error) {
@@ -136,31 +167,65 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const signIn = async (phone: string) => {
     try {
-      const { error } = await supabase.auth.signInWithOtp({
-        phone: phone,
+      const response = await fetch('http://localhost:3001/api/auth/send-code', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ phoneNumber: phone }),
       });
-      return { error };
+
+      const data = await response.json();
+
+      if (!data.success) {
+        return { error: { message: data.error } };
+      }
+
+      return { error: null };
     } catch (error) {
-      return { error };
+      return { error: { message: (error as Error).message || 'Network error' } };
     }
   };
 
   const verifyOtp = async (phone: string, token: string) => {
     try {
-      const { error } = await supabase.auth.verifyOtp({
-        phone: phone,
-        token: token,
-        type: 'sms',
+      const response = await fetch('http://localhost:3001/api/auth/verify-code', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ phoneNumber: phone, code: token }),
       });
-      return { error };
+
+      const data = await response.json();
+
+      if (!data.success) {
+        return { error: { message: data.error } };
+      }
+
+      // Store session token in localStorage
+      localStorage.setItem('sessionToken', data.sessionToken);
+      localStorage.setItem('user', JSON.stringify(data.user));
+
+      // Set user state
+      setUser(data.user);
+      setIsAuthenticated(true);
+
+      return { error: null };
     } catch (error) {
-      return { error };
+      return { error: { message: (error as Error).message || 'Network error' } };
     }
   };
 
   const signOut = async () => {
     try {
+      // Clear our custom session
+      localStorage.removeItem('sessionToken');
+      localStorage.removeItem('user');
+      
+      // Also clear Supabase session if exists
       await supabase.auth.signOut();
+      
       setUser(null);
       setProfile(null);
       setIsAuthenticated(false);
@@ -198,6 +263,34 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  const updateUser = async (userData: Partial<AppUser>) => {
+    if (user) {
+      const updatedUser = { ...user, ...userData };
+      setUser(updatedUser);
+      // Also update localStorage for custom auth users
+      if (localStorage.getItem('sessionToken')) {
+        localStorage.setItem('user', JSON.stringify(updatedUser));
+      }
+      
+      // Load profile if profile_completed is being set to true
+      if (userData.profile_completed && !profile) {
+        try {
+          const { data: profileData, error: profileError } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('user_id', user.id)
+            .single();
+          
+          if (!profileError && profileData) {
+            setProfile(profileData);
+          }
+        } catch (error) {
+          console.error('Error loading profile after user update:', error);
+        }
+      }
+    }
+  };
+
   const value: AuthContextType = {
     user,
     profile,
@@ -208,6 +301,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     signInWithEmail,
     signOut,
     refreshProfile,
+    updateUser,
   };
 
   return (
