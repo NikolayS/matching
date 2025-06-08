@@ -167,10 +167,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const signIn = async (phone: string) => {
     try {
-      const response = await fetch('http://localhost:3001/api/auth/send-code', {
+      const functionsUrl = process.env.REACT_APP_SUPABASE_FUNCTIONS_URL || 'https://zekigaxnilsrennylvnw.supabase.co/functions/v1';
+      
+      const response = await fetch(`${functionsUrl}/send-sms-code`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.REACT_APP_SUPABASE_ANON_KEY}`,
         },
         body: JSON.stringify({ phoneNumber: phone }),
       });
@@ -189,10 +192,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const verifyOtp = async (phone: string, token: string) => {
     try {
-      const response = await fetch('http://localhost:3001/api/auth/verify-code', {
+      const functionsUrl = process.env.REACT_APP_SUPABASE_FUNCTIONS_URL || 'https://zekigaxnilsrennylvnw.supabase.co/functions/v1';
+      
+      const response = await fetch(`${functionsUrl}/verify-sms-code`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.REACT_APP_SUPABASE_ANON_KEY}`,
         },
         body: JSON.stringify({ phoneNumber: phone, code: token }),
       });
