@@ -6,6 +6,7 @@ import { User as AppUser, Profile, AuthState } from '../types';
 interface AuthContextType extends AuthState {
   signIn: (phone: string) => Promise<{ error: any }>;
   verifyOtp: (phone: string, token: string) => Promise<{ error: any }>;
+  signInWithEmail: (email: string) => Promise<{ error: any }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -168,6 +169,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  const signInWithEmail = async (email: string) => {
+    try {
+      const { error } = await supabase.auth.signInWithOtp({
+        email: email,
+        options: {
+          shouldCreateUser: true,
+        },
+      });
+      return { error };
+    } catch (error) {
+      return { error };
+    }
+  };
+
   const refreshProfile = async () => {
     if (!isAuthenticated) return;
     
@@ -190,6 +205,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     isAuthenticated,
     signIn,
     verifyOtp,
+    signInWithEmail,
     signOut,
     refreshProfile,
   };

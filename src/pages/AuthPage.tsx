@@ -206,9 +206,11 @@ const FeatureText = styled.p`
 `;
 
 export const AuthPage: React.FC = () => {
-  const { signIn, verifyOtp } = useAuth();
+  const { signIn, verifyOtp, signInWithEmail } = useAuth();
+  const [authMode, setAuthMode] = useState<'choose' | 'phone' | 'email'>('choose');
   const [step, setStep] = useState<'phone' | 'verify'>('phone');
   const [phoneNumber, setPhoneNumber] = useState('');
+  const [email, setEmail] = useState('');
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -301,13 +303,92 @@ export const AuthPage: React.FC = () => {
     setOtp(value);
   };
 
+  const handleEmailAuth = async () => {
+    if (!email.trim()) {
+      setError('Please enter your email address');
+      return;
+    }
+
+    if (!email.includes('@')) {
+      setError('Please enter a valid email address');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    setSuccess('');
+
+    const { error } = await signInWithEmail(email);
+
+    if (error) {
+      setError(error.message || 'Failed to send magic link');
+      setLoading(false);
+      return;
+    }
+
+    setSuccess('Magic link sent! Check your email and click the link to sign in.');
+    setLoading(false);
+  };
+
   return (
     <Container>
       <Card>
-        {step === 'phone' ? (
+        {authMode === 'choose' ? (
           <>
             <Title>✨ matching</Title>
-            <Subtitle>Find your perfect match with AI-powered compatibility</Subtitle>
+            <Subtitle>Find your perfect coffee chat partners with AI-powered compatibility</Subtitle>
+            
+            {error && <ErrorMessage>{error}</ErrorMessage>}
+            {success && <SuccessMessage>{success}</SuccessMessage>}
+            
+            <SendCodeButton 
+              onClick={() => setAuthMode('email')}
+              style={{ marginBottom: '15px' }}
+            >
+              📧 Continue with Email
+            </SendCodeButton>
+            
+            <SendCodeButton 
+              onClick={() => setAuthMode('phone')}
+              style={{ background: 'linear-gradient(135deg, #764ba2 0%, #667eea 100%)' }}
+            >
+              📱 Continue with Phone
+            </SendCodeButton>
+          </>
+        ) : authMode === 'email' ? (
+          <>
+            <Title>📧 Email Sign In</Title>
+            <Subtitle>We'll send you a magic link to sign in</Subtitle>
+            
+            {error && <ErrorMessage>{error}</ErrorMessage>}
+            {success && <SuccessMessage>{success}</SuccessMessage>}
+            
+            <PhoneInputContainer>
+              <PhoneInput
+                type="email"
+                placeholder="your@email.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={loading}
+              />
+            </PhoneInputContainer>
+            
+            <SendCodeButton 
+              onClick={handleEmailAuth}
+              disabled={loading}
+              style={{ marginBottom: '15px' }}
+            >
+              {loading ? 'Sending...' : 'Send Magic Link'}
+            </SendCodeButton>
+            
+            <BackButton onClick={() => setAuthMode('choose')}>
+              ← Back to Options
+            </BackButton>
+          </>
+        ) : authMode === 'phone' && step === 'phone' ? (
+          <>
+            <Title>📱 Phone Sign In</Title>
+            <Subtitle>Enter your phone number to receive a verification code</Subtitle>
             
             {error && <ErrorMessage>{error}</ErrorMessage>}
             {success && <SuccessMessage>{success}</SuccessMessage>}
@@ -325,9 +406,14 @@ export const AuthPage: React.FC = () => {
             <SendCodeButton 
               onClick={handleSendCode}
               disabled={loading}
+              style={{ marginBottom: '15px' }}
             >
               {loading ? 'Sending...' : 'Send Verification Code'}
             </SendCodeButton>
+            
+            <BackButton onClick={() => setAuthMode('choose')}>
+              ← Back to Options
+            </BackButton>
           </>
         ) : (
           <>
@@ -359,22 +445,22 @@ export const AuthPage: React.FC = () => {
         )}
       </Card>
 
-      {step === 'phone' && (
+      {authMode === 'choose' && (
         <FeatureGrid>
           <FeatureCard>
-            <FeatureIcon>🤖</FeatureIcon>
-            <FeatureText>AI-Powered Matching</FeatureText>
+            <FeatureIcon>☕</FeatureIcon>
+            <FeatureText>Coffee Chat Matching</FeatureText>
           </FeatureCard>
           <FeatureCard>
-            <FeatureIcon>💫</FeatureIcon>
-            <FeatureText>Smart Compatibility</FeatureText>
+            <FeatureIcon>🤝</FeatureIcon>
+            <FeatureText>Professional Networking</FeatureText>
           </FeatureCard>
           <FeatureCard>
             <FeatureIcon>🔒</FeatureIcon>
             <FeatureText>Secure & Private</FeatureText>
           </FeatureCard>
           <FeatureCard>
-            <FeatureIcon>💝</FeatureIcon>
+            <FeatureIcon>💼</FeatureIcon>
             <FeatureText>Meaningful Connections</FeatureText>
           </FeatureCard>
         </FeatureGrid>
