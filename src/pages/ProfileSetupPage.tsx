@@ -293,11 +293,13 @@ export const ProfileSetupPage: React.FC = () => {
         formData.append('userId', user.id);
 
         try {
-          const uploadResponse = await fetch('http://localhost:3001/api/upload/photo', {
+          const functionsUrl = process.env.REACT_APP_SUPABASE_FUNCTIONS_URL || 'https://zekigaxnilsrennylvnw.supabase.co/functions/v1';
+          
+          const uploadResponse = await fetch(`${functionsUrl}/upload-photo`, {
             method: 'POST',
             body: formData,
             headers: {
-              'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
+              'Authorization': `Bearer ${process.env.REACT_APP_SUPABASE_ANON_KEY}`,
             }
           });
 
@@ -336,12 +338,14 @@ export const ProfileSetupPage: React.FC = () => {
       const isCustomAuth = !!localStorage.getItem('sessionToken');
       
       if (isCustomAuth) {
-        // Use backend for custom auth users (bypasses RLS)
-        const profileResponse = await fetch('http://localhost:3001/api/profile/create', {
+        // Use Edge Function for custom auth users (bypasses RLS)
+        const functionsUrl = process.env.REACT_APP_SUPABASE_FUNCTIONS_URL || 'https://zekigaxnilsrennylvnw.supabase.co/functions/v1';
+        
+        const profileResponse = await fetch(`${functionsUrl}/create-profile`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
+            'Authorization': `Bearer ${process.env.REACT_APP_SUPABASE_ANON_KEY}`,
           },
           body: JSON.stringify({
             userId: user.id,
@@ -357,11 +361,11 @@ export const ProfileSetupPage: React.FC = () => {
           throw new Error(profileResult.error || 'Profile creation failed');
         }
         
-        console.log('✅ Profile created successfully via backend:', profileResult);
+        console.log('✅ Profile created successfully via Edge Function:', profileResult);
         
-        // If backend returned a different user ID (due to phone number match), update our local state
+        // If Edge Function returned a different user ID (due to phone number match), update our local state
         if (profileResult.userId && profileResult.userId !== user.id) {
-          console.log(`🔄 Backend returned different user ID: ${profileResult.userId}, updating local state`);
+          console.log(`🔄 Edge Function returned different user ID: ${profileResult.userId}, updating local state`);
           const updatedUser = { ...user, id: profileResult.userId, profile_completed: true };
           localStorage.setItem('user', JSON.stringify(updatedUser));
           await updateUser(updatedUser);
